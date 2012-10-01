@@ -12,6 +12,7 @@ use Time::HiRes qw( gettimeofday tv_interval sleep );
 use POSIX qw( :sys_wait_h setsid );
 use Getopt::Long;
 use Data::Dumper;
+use Carp qw( verbose );
 use vars qw($config_file $debug $status_file $interface $port $config
 $status $update);
 
@@ -54,6 +55,8 @@ my $sigint = 0;
 sub sigint_handler { $sigint = 1; }
 $SIG{'INT'} = \&sigint_handler;
 
+$SIG{__DIE__} = \&Carp::confess;
+
 my $rmlast = undef;
 sub wait_interval {
     $rmlast = [gettimeofday] unless defined($rmlast);
@@ -86,6 +89,9 @@ $status->open();
 $status->serve_http_on($config->{interface}, $config->{port},
         $config->{authuser}, $config->{authpass}, $config->{hostsallow})
     if($config->{port});
+
+$status->init_http_trap($config->{httptrap})
+    if($config->{httptrap});
 
 while(1) {
     while(my($module_name, $mod_configs) = each %{$config->{Module}}) {
@@ -138,6 +144,10 @@ while(1) {
         }
     }
     $status->close();
+    
+    $status->http_trap($debug)
+        if($config->{httptrap});
+
     die "Exiting.\n" if($sigint);
     if ($sighup) {
         # Reload configuration (and modules) on SIGHUP
@@ -147,6 +157,8 @@ while(1) {
         # Needed to ensure any removed modules do not continue to show in the
         # web interface
         $status->clear();
+        $status->init_http_trap($config->{httptrap})
+            if($config->{httptrap});
     } else {
         reap_zombies();
         wait_interval();

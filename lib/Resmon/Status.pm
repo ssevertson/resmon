@@ -2,7 +2,7 @@ package Resmon::Status;
 
 use strict;
 use warnings;
-use POSIX qw/:sys_wait_h/;
+use POSIX qw/:sys_wait_h strftime/;
 use IO::Handle;
 use IO::File;
 use IO::Socket;
@@ -182,6 +182,7 @@ sub dump_generic_module {
     }
     return $rv;
 }
+
 sub dump_xml {
     my $self = shift;
     my $response = <<EOF
@@ -194,11 +195,55 @@ EOF
     $response .= "</ResmonResults>\n";
     return $response;
 }
+
+sub dump_json {
+    my $self = shift;
+
+    my $json_root = {};
+    foreach my $module (sort keys %{$self->{store}}) {
+        my $services = $self->{store}->{$module};
+        foreach my $service (sort keys %$services) {
+
+            my $json_service = {};
+            $json_root->{$module . "::" . $service} = $json_service;
+
+            my $info = $services->{$service};
+
+            foreach my $key (sort keys %$info) {
+                my $value = $info->{$key};
+                if(ref $value eq 'HASH') {
+                    foreach my $k (keys %$value) {
+                        my $v = $value->{$k};
+
+                        my $type = "0";
+                        if (ref($v) eq 'ARRAY') {
+                            $type = $v->[1];
+                            if ($type !~ /^[0iIlLns]$/) {
+                                $type = "0";
+                            }
+                            $v = $v->[0];
+                        }
+                        if ($type !~ /^[0s]$/) {
+                            $v = 1 * $v; # Force numeric
+                        }
+                	$json_service->{$k} = $v;
+                    }
+                }
+            }
+        }
+    }
+
+    eval 'use JSON;';
+    my $json = JSON->new();
+    return $json->pretty->encode($json_root);
+}
+
 sub dump_plain {
     my $self = shift;
     my $response = $self->dump_generic(\&plain_info);
     return $response;
 }
+
 sub get_xsl() {
     my $response = <<EOF
 <?xml version="1.0" encoding="ISO-8859-1"?>
@@ -563,6 +608,42 @@ sub serve_http_on {
     return;
 }
 
+sub init_http_trap {
+    my $self = shift;
+    $self->{httptrap} = shift;
+    
+    eval 'use LWP::UserAgent;';
+    my $user_agent = LWP::UserAgent->new;
+    $user_agent->agent('Resmon');
+    
+    $self->{user_agent} = $user_agent;
+}
+
+sub http_trap {
+    my ($self, $debug) = @_;
+    my $payload = $self->dump_json();
+
+    my $request = HTTP::Request->new(PUT => $self->{httptrap});
+    $request->content_type('application/json');
+    $request->content($payload);
+
+    my $now = time();
+    my $response = $self->{user_agent}->request($request);
+
+    my $timestamp = strftime("%Y-%m-%dT%H:%M:%S %z", localtime($now));
+
+    # Check the outcome of the response
+    if (!$response->is_success) {
+        print STDERR "$timestamp: Failed on PUT to HTTP trap: $self->{httptrap}\n";
+        print STDERR "Request: $payload\n";
+        print STDERR "Response: " . $response->status_line . "\n";
+        print STDERR $response->content . "\n";
+    }
+    else {
+        print "$timestamp: Success on PUT to HTTP trap: $self->{httptrap}\n" if $debug;
+    }
+}
+
 sub open {
     my $self = shift;
     return 0 unless(ref $self);
@@ -627,7 +708,7 @@ sub close {
 sub DESTROY {
     my $self = shift;
     # Make sure we're really the parent process
-    return if ($self->{parent_pid} != $$);
+    return if (defined $self->{parent_pid} && $self->{parent_pid} != $$);
     my $child = $self->{child};
     if ($child) {
         kill 15, $child;

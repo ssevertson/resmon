@@ -18,7 +18,6 @@ sub split_ip_list {
        $int = unpack("N", pack("C4", split(/\./,$quad)));
        $mask = $int >> $matchbits;
        push @result => {mask => $mask, bits => $matchbits, allow => $allow};
-print STDERR "mask=$mask,bits=$matchbits,allow=$allow\n";
     }
     return \@result;
 }
@@ -155,6 +154,9 @@ sub new {
             }
             elsif(/\s*HOSTS\s+DENY\s+([^;]+)\s*;\s*/) {
                 push (@{$self->{hostsallow}}, @{split_ip_list($1,0)});
+                next;
+            } elsif(/\s*HTTPTRAP\s+(\S+)\s*;\s*/) {
+                $self->{httptrap} = $1;
                 next;
             } elsif(/\s*INCLUDE\s+(\S+)\s*;\s*/) {
                 my $incglob = $1;
