@@ -90,13 +90,13 @@ sub trim_slashes {
 }
 
 sub content_to_hash {
-	my ($self, $content) = @_;
-	
-	my $result = {};
-	
-	my @metrics_array = split(/$self->{'metric_separator_pattern'}/, $content);
+    my ($self, $content) = @_;
+    
+    my $result = {};
+    
+    my @metrics_array = split(/$self->{'metric_separator_pattern'}/, $content);
     foreach my $metric (@metrics_array) {
-    	chomp($metric);
+        chomp($metric);
         my ($key, $val) = split(/$self->{'key_value_separator_pattern'}/, $metric);
         $result->{$key} = [$val, 'n'];
     }
@@ -130,19 +130,19 @@ sub wildcard_handler {
     my $result = {};
     my $line_counter = 0;
     foreach my $line (@output) {
-    	my $line_result = $self->content_to_hash($line);
-    	
-    	my $check_name = delete($line_result->{$check_name_key});
-    	if(defined($check_name)) {
-    		if (ref($check_name) eq 'ARRAY') {
-    			$check_name = ${$check_name}[0];
-    		}
-    	} else {
-    		$check_name = "unknown_$line_counter";
-    	}
-    	
-    	$result->{$check_name} = $line_result;
-	    $line_counter++;
+        my $line_result = $self->content_to_hash($line);
+        
+        my $check_name = delete($line_result->{$check_name_key});
+        if(defined($check_name)) {
+            if (ref($check_name) eq 'ARRAY') {
+                $check_name = ${$check_name}[0];
+            }
+        } else {
+            $check_name = "unknown_$line_counter";
+        }
+        
+        $result->{$check_name} = $line_result;
+        $line_counter++;
     }
     
     return $result;
