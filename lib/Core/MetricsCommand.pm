@@ -1,33 +1,35 @@
-package Core::MetricsFile;
+package Core::MetricsCommand;
 
 use strict;
 use warnings;
 
 use base 'Resmon::Module';
 
+use Resmon::ExtComm qw(run_command);
+
 =pod
 
 =head1 NAME
 
-Core::MetricsFile - retrieve metrics from a flat file
+Core::MetricsCommand - retrieve metrics from an executable
 
 =head1 SYNOPSIS
 
- Core::MetricsFile {
-     local : file => /path/to/metrics/file
+ Core::MetricsCommand {
+     local : cmd => /path/to/executable -arguments
  }
  
- Core::MetricsFile {
-     local : file => /path/to/metrics/file, metric_separator_pattern => / /, key_value_separator_pattern => /:/
+ Core::MetricsCommand {
+     local : cmd => /path/to/executable -arguments, metric_separator_pattern => / /, key_value_separator_pattern => /:/
  }
  
- Core::MetricsFile {
-     * : file => /path/to/metrics/multi-line-file, check_name_key => id
+ Core::MetricsCommand {
+     * : cmd => /path/to/executable -arguments, check_name_key => id
  }
 
 =head1 DESCRIPTION
 
-Retrieve metrics from existing flat file.
+Retrieve metrics by running an executable.
 
 =head1 CONFIGURATION
 
@@ -35,13 +37,13 @@ Retrieve metrics from existing flat file.
 
 =item check_name
 
-Arbitrary name of the check, or * if file contains multiple checks. If * is
-specified, check_name_key must also be specified, and any values in the file
+Arbitrary name of the check, or * if executable returns multiple checks. If * is
+specified, check_name_key must also be specified, and any values in the output
 for this key will be used as check names.
 
-=item file
+=item cmd
 
-The full path to the file containing metrics data (required).
+The command and any arguments to run (required).
 
 =item metric_separator_pattern
 
@@ -53,7 +55,7 @@ A regular expression that defines how metric keys are are separated from values 
 
 =item check_name_key
 
-If the file contains multiple checks, the key that's value will be used as the check name (valid and required only if * specified as check_name)
+If the executable returns multiple checks, the key that's value will be used as the check name (valid and required only if * specified as check_name)
 
 =back
 
@@ -63,7 +65,7 @@ If the file contains multiple checks, the key that's value will be used as the c
 
 =item *
 
-Metrics depend on contents of file.
+Metrics depend on results of the executable.
 
 =back
 
@@ -107,12 +109,9 @@ sub content_to_hash {
 sub handler {
     my $self = shift;
     my $config = $self->{'config'};
-    my $file = $config->{'file'} || die "File is required.\n";
+    my $cmd = $config->{'cmd'} || die "Command is required.\n";
     
-    local $/=undef;
-    open(my $FH, "<", $file) or die "Couldn't open file $file: $!\n";
-    my $output = <$FH>;
-    close $FH;
+    my $output = run_command($cmd);
     
     return $self->content_to_hash($output);
 }
@@ -120,16 +119,14 @@ sub handler {
 sub wildcard_handler {
     my $self = shift;
     my $config = $self->{'config'};
-    my $file = $config->{'file'} || die "File is required.\n";
+    my $cmd = $config->{'cmd'} || die "Command is required.\n";
     my $check_name_key= $config->{'check_name_key'} || die "Check name key is required.\n";
     
-    open(my $FH, "<", $file) or die "Couldn't open file $file: $!\n";
-    my @output = <$FH>; 
-    close $FH;
-    
+    my $output = run_command($cmd);
+
     my $result = {};
     my $line_counter = 0;
-    foreach my $line (@output) {
+    foreach my $line (split(/\n/, $output)) {
     	my $line_result = $self->content_to_hash($line);
     	
     	my $check_name = delete($line_result->{$check_name_key});
