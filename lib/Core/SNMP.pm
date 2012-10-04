@@ -79,9 +79,31 @@ SNMP hostname to use to (defaults to "127.0.0.1").
 
 SNMP port to use to (defaults to 161).
 
+=item name_pattern
+
+A Perl regular expression used to transform the returned names into friendlier metric names (optional if mode=""table"", defaults to no pattern).
+
 =back
 
 =cut
+
+sub new {
+    my ($class, $check_name, $config) = @_;
+    my $self = $class->SUPER::new($check_name, $config);
+    
+    my $mode = $config->{'mode'} || 'table';
+    my $name_pattern = $config->{'name_pattern'};
+    if ('table' eq $mode && defined($name_pattern)) {
+        $name_pattern = trim_slashes($name_pattern);
+        my ($name_pattern_search, $name_pattern_replace) = split(/(?<!\\)\//, $name_pattern);
+        $self->{'name_pattern_search'} = $name_pattern_search;
+        $self->{'name_pattern_replace'} = '"' . $name_pattern_replace . '"';
+    }
+
+    bless($self, $class);
+    return $self;
+}
+
 
 sub get_snmp_value {
     my ($session, $oid) = @_;
@@ -113,6 +135,12 @@ sub get_last_oid {
     my ($oid) = @_;
     $oid =~ s/^[0-9.]*\.([0-9])/$1/;
     return $oid;
+}
+
+sub trim_slashes {
+    my $string = shift;
+    $string =~ s/^\/?(.*?)\/?$/$1/;
+    return $string;
 }
 
 sub handler {
@@ -154,6 +182,9 @@ sub handler {
         my $oid_names_values  = $config->{'oid_names_values'}  || die "Parameter oid_names_values is required";
         my $oid_filter = $config->{'oid_filter'};
         my $filter_values = $config->{'filter_values'};
+        my $name_pattern_search = $self->{'name_pattern_search'};
+        my $name_pattern_replace = $self->{'name_pattern_replace'};
+        
 
         my $instance_names_by_oid = get_snmp_values($session, $oid_instance_name);
         my $instance_names_by_index = { map { get_last_oid($_) => $instance_names_by_oid->{$_} } keys %$instance_names_by_oid };
@@ -179,6 +210,15 @@ sub handler {
                     $result->{"$instance_name-$name"} = $value;
                 }
             }
+        }
+        
+        if(defined($name_pattern_search) && defined($name_pattern_replace)) {
+            my $transformed = {};
+            while( my ($key, $val) = each %$result ) {
+                $key =~ s/$name_pattern_search/$name_pattern_replace/gee;
+                $transformed->{$key} = $val;
+            }
+            $result = $transformed;
         }
         
     } else {
